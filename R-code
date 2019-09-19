@@ -1,0 +1,174 @@
+##load packages
+library(Seurat)
+library(cowplot)
+library(gplots)
+library(dplyr)
+
+##load il17 data, set up condition and normalize
+il17.hashtag <- readRDS("E:/IL-17 data/Cell_hashing_19006FL-08/il17.hashtag.Rds")
+il17.hashtag
+il17.hashtag$stim <- "STIM"
+il17.hashtag[["percent.mt"]] <- PercentageFeatureSet(il17.hashtag, pattern = "^mt-")
+VlnPlot(il17.hashtag, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), pt.size = 0.1, ncol = 3)
+il17.hashtag@meta.data
+Idents(il17.hashtag) <- "HTO_classification.global"
+VlnPlot(il17.hashtag, features = "nCount_RNA", pt.size = 0.1, log = TRUE)
+il17.hashtag <- subset(il17.hashtag, idents = "Negative", invert = TRUE)
+il17.hashtag <- subset(il17.hashtag, idents = "Doublet", invert = TRUE)
+il17.hashtag <- subset(il17.hashtag, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 25)
+il17.hashtag <- NormalizeData(il17.hashtag, verbose = FALSE)
+il17.hashtag <- FindVariableFeatures(il17.hashtag, selection.method = "vst")
+top10 <- head(VariableFeatures(il17.hashtag), 10)
+plot1 <- VariableFeaturePlot(il17.hashtag)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CombinePlots(plots = list(plot1, plot2))
+
+##load pbs data, set up condition and normalize
+pbs.hashtag <- readRDS("E:/IL-17 data/Cell_hashing_19006FL-08/pbs.hashtag.Rds")
+pbs.hashtag
+pbs.hashtag$stim <- "CTRL"
+pbs.hashtag[["percent.mt"]] <- PercentageFeatureSet(pbs.hashtag, pattern = "^mt-")
+VlnPlot(pbs.hashtag, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), pt.size = 0.1, ncol = 3)
+pbs.hashtag@meta.data
+Idents(pbs.hashtag) <- "HTO_classification.global"
+VlnPlot(pbs.hashtag, features = "nCount_RNA", pt.size = 0.1, log = TRUE)
+pbs.hashtag <- subset(pbs.hashtag, idents = "Negative", invert = TRUE)
+pbs.hashtag <- subset(pbs.hashtag, idents = "Doublet", invert = TRUE)
+pbs.hashtag <- subset(pbs.hashtag, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 25)
+pbs.hashtag <- NormalizeData(pbs.hashtag, verbose = FALSE)
+pbs.hashtag <- FindVariableFeatures(pbs.hashtagg, selection.method = "vst")
+top10 <- head(VariableFeatures(pbs.hashtag), 10)
+plot1 <- VariableFeaturePlot(pbs.hashtag)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CombinePlots(plots = list(plot1, plot2))
+
+saveRDS(il17.hashtag, file="E:/Results---il17/il17-normalize.Rds")
+saveRDS(pbs.hashtag, file="E:/Results---il17/pbs-normalize.Rds")
+
+#Perform integration#
+immune.anchors <- FindIntegrationAnchors(object.list = list(il17.hashtag, pbs.hashtag), dims = 1:20)
+immune.combined <- IntegrateData(anchorset = immune.anchors, dims = 1:20)
+
+#Perform an integrated analysis#
+DefaultAssay(immune.combined) <- "integrated"
+# Run the standard workflow for visualization and clustering
+immune.combined <- ScaleData(immune.combined, verbose = FALSE)
+immune.combined <- RunPCA(immune.combined, npcs = 30, verbose = FALSE)
+ElbowPlot(immune.combined)
+
+# umap and Clustering DIM=25
+immune.combined <- RunUMAP(immune.combined, reduction = "pca", dims = 1:20)
+immune.combined <- RunTSNE(immune.combined, reduction = "pca", dims = 1:20)
+immune.combined <- FindNeighbors(immune.combined, reduction = "pca", dims = 1:20)
+immune.combined <- FindClusters(immune.combined, resolution = 0.2)
+# Visualization
+p1 <- DimPlot(immune.combined, reduction = "umap", split.by = "stim")
+p2 <- DimPlot(immune.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+
+p1 <- DimPlot(immune.combined, reduction = "tsne", split.by = "stim")
+p2 <- DimPlot(immune.combined, reduction = "tsne", label = TRUE)
+plot_grid(p1, p2)
+
+saveRDS(immune.combined, file= "E:/Results---il17/IL-17-PBS-Integrate-17-clusters.rds")
+
+##Tabulate cells by cluster ID, replicate, or both#
+Idents(immune.combined) <- "seurat_clusters"
+table(Idents(immune.combined))
+table(c(immune.combined$stim,immune.combined$HTO_classification.global))
+prop.table(table(Idents(immune.combined)))
+table(Idents(immune.combined), immune.combined$stim)
+prop.table(table(Idents(immune.combined), immune.combined$stim), margin = 2)
+
+##Identify differentially expressed features (cluster biomarkers)#
+DefaultAssay(immune.combined) <- "RNA"
+immune.combined.markers <- FindAllMarkers(immune.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.table(immune.combined.markers, "E:/Results---il17/FindAllMarkers-17-clusters.txt")
+top10 <- immune.combined.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+DoHeatmap(immune.combined, features = top10$gene) + NoLegend()
+
+##Identify differentially expressed gene across condition
+DefaultAssay(immune.combined) <- "RNA"
+immune.combined@meta.data$cluster_condition <- paste(immune.combined@meta.data$seurat_clusters, immune.combined@meta.data$stim, sep = "_")
+head(immune.combined@meta.data$cluster_condition)
+Idents(immune.combined) <- immune.combined@meta.data$cluster_condition
+head(Idents(immune.combined))
+
+cluster0.markers <- FindMarkers(immune.combined, ident.1 = "0_STIM", ident.2 = "0_CTRL", verbose = FALSE)
+write.table(cluster0.markers, "C:/Users/ASUS/Desktop/0.txt")
+cluster1.markers <- FindMarkers(immune.combined, ident.1 = "1_STIM", ident.2 = "1_CTRL", verbose = FALSE)
+write.table(cluster1.markers, "C:/Users/ASUS/Desktop/1.txt")
+cluster2.markers <- FindMarkers(immune.combined, ident.1 = "2_STIM", ident.2 = "2_CTRL", verbose = FALSE)
+write.table(cluster2.markers, "C:/Users/ASUS/Desktop/2.txt")
+cluster3.markers <- FindMarkers(immune.combined, ident.1 = "3_STIM", ident.2 = "3_CTRL", verbose = FALSE)
+write.table(cluster3.markers, "C:/Users/ASUS/Desktop/3.txt")
+cluster4.markers <- FindMarkers(immune.combined, ident.1 = "4_STIM", ident.2 = "4_CTRL", verbose = FALSE)
+write.table(cluster4.markers, "C:/Users/ASUS/Desktop/4.txt")
+cluster5.markers <- FindMarkers(immune.combined, ident.1 = "5_STIM", ident.2 = "5_CTRL", verbose = FALSE)
+write.table(cluster5.markers, "C:/Users/ASUS/Desktop/5.txt")
+cluster6.markers <- FindMarkers(immune.combined, ident.1 = "6_STIM", ident.2 = "6_CTRL", verbose = FALSE)
+write.table(cluster6.markers, "C:/Users/ASUS/Desktop/6.txt")
+cluster7.markers <- FindMarkers(immune.combined, ident.1 = "7_STIM", ident.2 = "7_CTRL", verbose = FALSE)
+write.table(cluster7.markers, "C:/Users/ASUS/Desktop/7.txt")
+cluster8.markers <- FindMarkers(immune.combined, ident.1 = "8_STIM", ident.2 = "8_CTRL", verbose = FALSE)
+write.table(cluster8.markers, "C:/Users/ASUS/Desktop/8.txt")
+cluster9.markers <- FindMarkers(immune.combined, ident.1 = "9_STIM", ident.2 = "9_CTRL", verbose = FALSE)
+write.table(cluster9.markers, "C:/Users/ASUS/Desktop/9.txt")
+cluster10.markers <- FindMarkers(immune.combined, ident.1 = "10_STIM", ident.2 = "10_CTRL", verbose = FALSE)
+write.table(cluster10.markers, "C:/Users/ASUS/Desktop/10.txt")
+cluster11.markers <- FindMarkers(immune.combined, ident.1 = "11_STIM", ident.2 = "11_CTRL", verbose = FALSE)
+write.table(cluster11.markers, "C:/Users/ASUS/Desktop/11.txt")
+cluster12.markers <- FindMarkers(immune.combined, ident.1 = "12_STIM", ident.2 = "12_CTRL", verbose = FALSE)
+write.table(cluster12.markers, "C:/Users/ASUS/Desktop/12.txt")
+cluster13.markers <- FindMarkers(immune.combined, ident.1 = "13_STIM", ident.2 = "13_CTRL", verbose = FALSE)
+write.table(cluster13.markers, "C:/Users/ASUS/Desktop/13.txt")
+cluster14.markers <- FindMarkers(immune.combined, ident.1 = "14_STIM", ident.2 = "14_CTRL", verbose = FALSE)
+write.table(cluster14.markers, "C:/Users/ASUS/Desktop/14.txt")
+cluster15.markers <- FindMarkers(immune.combined, ident.1 = "15_STIM", ident.2 = "15_CTRL", verbose = FALSE)
+write.table(cluster15.markers, "C:/Users/ASUS/Desktop/15.txt")
+cluster16.markers <- FindMarkers(immune.combined, ident.1 = "16_STIM", ident.2 = "16_CTRL", verbose = FALSE)
+write.table(cluster16.markers, "C:/Users/ASUS/Desktop/16.txt")
+
+##sessionInfo()
+R version 3.6.0 (2019-04-26)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows 10 x64 (build 17763)
+
+Matrix products: default
+
+locale:
+[1] LC_COLLATE=Chinese (Simplified)_China.936  LC_CTYPE=Chinese (Simplified)_China.936   
+[3] LC_MONETARY=Chinese (Simplified)_China.936 LC_NUMERIC=C                              
+[5] LC_TIME=Chinese (Simplified)_China.936    
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] WriteXLS_5.0.0  dplyr_0.8.3  ggplot2_3.2.1  gplots_3.0.1.1 cowplot_1.0.0  Seurat_3.1.0  
+
+loaded via a namespace (and not attached):
+[1] nlme_3.1-139         tsne_0.1-3          bitops_1.0-6        RcppAnnoy_0.0.12   
+[5] RColorBrewer_1.1-2   httr_1.4.1          sctransform_0.2.0   tools_3.6.0        
+[9] backports_1.1.4      R6_2.4.0            irlba_2.3.3         KernSmooth_2.23-15 
+[13] uwot_0.1.3          lazyeval_0.2.2      colorspace_1.4-1    withr_2.1.2        
+[17] npsurv_0.4-0        tidyselect_0.2.5    gridExtra_2.3       compiler_3.6.0     
+[21] plotly_4.9.0        labeling_0.3        caTools_1.17.1.2    scales_1.0.0       
+[25] lmtest_0.9-37       ggridges_0.5.1      pbapply_1.4-2       stringr_1.4.0      
+[29] digest_0.6.20       R.utils_2.9.0       pkgconfig_2.0.2     htmltools_0.3.6    
+[33] bibtex_0.4.2        htmlwidgets_1.3     rlang_0.4.0         rstudioapi_0.10    
+[37] zoo_1.8-6           jsonlite_1.6        ica_1.0-2           gtools_3.8.1       
+[41] R.oo_1.22.0         magrittr_1.5        Matrix_1.2-17       Rcpp_1.0.2         
+[45] munsell_0.5.0       ape_5.3             reticulate_1.13     lifecycle_0.1.0    
+[49] R.methodsS3_1.7.1   stringi_1.4.3       gbRd_0.4-11         MASS_7.3-51.4      
+[53] Rtsne_0.15          plyr_1.8.4          grid_3.6.0          parallel_3.6.0     
+[57] gdata_2.18.0        listenv_0.7.0       ggrepel_0.8.1       crayon_1.3.4       
+[61] lattice_0.20-38     splines_3.6.0       SDMTools_1.1-221.1  zeallot_0.1.0      
+[65] pillar_1.4.2        igraph_1.2.4.1      future.apply_1.3.0  reshape2_1.4.3     
+[69] codetools_0.2-16    leiden_0.3.1        glue_1.3.1          lsei_1.2-0         
+[73] metap_1.1           RcppParallel_4.4.3  data.table_1.12.2   vctrs_0.2.0        
+[77] png_0.1-7           Rdpack_0.11-0       gtable_0.3.0        RANN_2.6.1         
+[81] purrr_0.3.2         tidyr_1.0.0         future_1.14.0       assertthat_0.2.1   
+[85] rsvd_1.0.2          RSpectra_0.15-0     rsconnect_0.8.15    survival_2.44-1.1  
+[89] viridisLite_0.3.0   tibble_2.1.3        cluster_2.0.8       globals_0.12.4     
+[93] fitdistrplus_1.0-14 ROCR_1.0-7 
