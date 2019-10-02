@@ -1,0 +1,153 @@
+##load packages
+library(Seurat)
+library(cowplot)
+library(gplots)
+library(ggplot2)
+library(dplyr)
+library(xlsx)
+
+##Load il17 data
+il17.hashtag <- readRDS("I:/il17.hashtag.Rds")
+
+##Normalize the il17data, choose the singelet cells
+il17.hashtag[["percent.mt"]] <- PercentageFeatureSet(il17.hashtag, pattern = "^mt-")
+VlnPlot(il17.hashtag, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), pt.size = 0.1, ncol = 3)
+Idents(il17.hashtag) <- "HTO_classification.global"
+VlnPlot(il17.hashtag, features = "nCount_RNA", pt.size = 0.1, log = TRUE)
+il17.hashtag <- subset(il17.hashtag, idents = "Negative", invert = TRUE)
+il17.hashtag <- subset(il17.hashtag, idents = "Doublet", invert = TRUE)
+il17.hashtag <- subset(il17.hashtag, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 7.5)
+il17.hashtag <- NormalizeData(il17.hashtag, verbose = FALSE)
+il17.hashtag <- FindVariableFeatures(il17.hashtag, selection.method = "vst")
+
+##Run ADT data
+il17 <- NormalizeData(il17, assay = "ADT", normalization.method = "CLR")
+
+##Standard log-normalization
+il17 <- NormalizeData(il17.hashtag)
+
+# standard scaling (no regression)
+il17 <- ScaleData(il17)
+
+# Run PCA, select 13 PCs for tSNE visualization and graph-based clustering
+il17 <- RunPCA(il17, verbose = FALSE)
+ElbowPlot(il17, ndims = 50)
+
+#Get clusters
+il17 <- FindNeighbors(il17, dims = 1:25)
+il17 <- FindClusters(il17, resolution = 0.1)
+il17 <- RunTSNE(il17, dims = 1:25, method = "FIt-SNE")
+DimPlot(il17, reduction = "tsne")
+DimPlot(il17, label = TRUE) + NoLegend()
+
+
+##Cluster Markers
+for (i in 0:12){
+  marker_i <- FindMarkers(il17, ident.1 = i, verbose =TRUE)
+  tab  <- paste0("Cluster", " ", i)
+  write.xlsx(marker_i, file = "I:/FindMarker.xlsx", sheetName = tab, append = TRUE)
+}
+
+
+##Plots
+il17 <- ScaleData(il17, assay = "ADT")
+DefaultAssay(il17) <- "ADT"
+PCAPlot(il17, pt.size = 0.5)
+rownames(il17, 'ADT')
+
+FeaturePlot(il17, features = c("adt_CD3", "adt_CD4", "adt_CD8a", "adt_CD69", "adt_CD62L","adt_CD44"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_CD25", "adt_CD127-(IL-7Ralpha)", "adt_TCR-gamma/sigma", "adt_CD19", "adt_IgM", "adt_CD335-(NKp46)"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_NK-1.1", "adt_CD90.2","adt_I-A/I-E","adt_CD45R/B220","adt_CD11b", "adt_CD172a-(SIRPalpha)"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_XCR1","adt_CD103", "adt_CD64-(FcgammaRI)", "adt_CD11c", "adt_CD24", "adt_CD326-(Ep-CAM)"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_CD195-(CCR5)","adt_CD196-(CCR6)", "adt_CXCR4", "adt_CD134-(OX-40)", "adt_CD278-(ICOS)", "adt_CD223-(LAG-3)"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_CD274-(B7-H1,-PD-L1)", "adt_KLRG1-(MAFA)","adt_CD27", "adt_CD21/CD35-(CR2/CR1)", "adt_CD86", "adt_IgD"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+FeaturePlot(il17, features = c("adt_CD117-(c-kit)", "adt_CX3CR1", "adt_F4/80", "adt_CD192-(CCR2)"), min.cutoff = "q05", max.cutoff = "q95", ncol = 3)
+
+RidgePlot(il17, features = c("adt_CD3", "adt_CD4", "adt_CD8a", "adt_CD69", "adt_CD62L","adt_CD44"),ncol = 2)
+RidgePlot(il17, features = c("adt_CD25", "adt_CD127-(IL-7Ralpha)", "adt_TCR-gamma/sigma", "adt_CD19", "adt_IgM", "adt_CD335-(NKp46)"),ncol = 2)
+RidgePlot(il17, features = c("adt_NK-1.1", "adt_CD90.2","adt_I-A/I-E","adt_CD45R/B220","adt_CD11b", "adt_CD172a-(SIRPalpha)"),ncol = 2)
+RidgePlot(il17, features = c("adt_XCR1","adt_CD103", "adt_CD64-(FcgammaRI)", "adt_CD11c", "adt_CD24", "adt_CD326-(Ep-CAM)"),ncol = 2)
+RidgePlot(il17, features = c("adt_CD195-(CCR5)","adt_CD196-(CCR6)", "adt_CXCR4", "adt_CD134-(OX-40)", "adt_CD278-(ICOS)", "adt_CD223-(LAG-3)"),ncol = 2)
+RidgePlot(il17, features = c("adt_CD274-(B7-H1,-PD-L1)", "adt_KLRG1-(MAFA)","adt_CD27", "adt_CD21/CD35-(CR2/CR1)", "adt_CD86", "adt_IgD"),ncol = 2)
+RidgePlot(il17, features = c("adt_CD117-(c-kit)", "adt_CX3CR1", "adt_F4/80", "adt_CD192-(CCR2)"),ncol = 2)
+
+FeatureScatter(il17, feature1 = "adt_CD11b", feature2 = "adt_CD11c")
+FeatureScatter(il17, feature1 = "adt_CD3", feature2 = "adt_CD4")
+FeatureScatter(il17, feature1 = "adt_CD3", feature2 = "adt_CD8a")
+FeatureScatter(il17, feature1 = "adt_CD4", feature2 = "adt_CD8a")
+
+# Downsample the clusters to a maximum of 300 cells each (makes the heatmap easier to see for
+# small clusters)
+il17.small <- subset(il17, downsample = 300)
+
+# Find protein markers for all clusters, and draw a heatmap
+adt.markers <- FindAllMarkers(il17.small, assay = "ADT", only.pos = TRUE)
+DoHeatmap(il17.small, features = unique(adt.markers$gene), assay = "ADT", angle = 90) + NoLegend()
+
+##sessionInfo()
+R version 3.6.1 (2019-07-05)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows 10 x64 (build 16299)
+
+Matrix products: default
+
+locale:
+[1] LC_COLLATE=English_United States.1252 
+[2] LC_CTYPE=English_United States.1252   
+[3] LC_MONETARY=English_United States.1252
+[4] LC_NUMERIC=C                          
+[5] LC_TIME=English_United States.1252    
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets 
+[6] methods   base     
+
+other attached packages:
+[1] xlsx_0.6.1     dplyr_0.8.3    ggplot2_3.2.1 
+[4] gplots_3.0.1.1 cowplot_1.0.0  Seurat_3.0.2  
+
+loaded via a namespace (and not attached):
+ [1] nlme_3.1-140        tsne_0.1-3         
+ [3] bitops_1.0-6        RColorBrewer_1.1-2 
+ [5] httr_1.4.1          sctransform_0.2.0  
+ [7] tools_3.6.1         R6_2.4.0           
+ [9] irlba_2.3.3         KernSmooth_2.23-15 
+[11] lazyeval_0.2.2      colorspace_1.4-1   
+[13] npsurv_0.4-0        withr_2.1.2        
+[15] tidyselect_0.2.5    gridExtra_2.3      
+[17] compiler_3.6.1      plotly_4.9.0       
+[19] labeling_0.3        caTools_1.17.1.2   
+[21] scales_1.0.0        lmtest_0.9-37      
+[23] ggridges_0.5.1      pbapply_1.4-1      
+[25] stringr_1.4.0       digest_0.6.20      
+[27] R.utils_2.9.0       pkgconfig_2.0.2    
+[29] htmltools_0.3.6     bibtex_0.4.2       
+[31] htmlwidgets_1.3     rlang_0.4.0        
+[33] rstudioapi_0.10     zoo_1.8-6          
+[35] jsonlite_1.6        ica_1.0-2          
+[37] gtools_3.8.1        R.oo_1.22.0        
+[39] magrittr_1.5        Matrix_1.2-17      
+[41] Rcpp_1.0.2          munsell_0.5.0      
+[43] ape_5.3             reticulate_1.13    
+[45] R.methodsS3_1.7.1   stringi_1.4.3      
+[47] gbRd_0.4-11         MASS_7.3-51.4      
+[49] Rtsne_0.15          plyr_1.8.4         
+[51] grid_3.6.1          parallel_3.6.1     
+[53] gdata_2.18.0        listenv_0.7.0      
+[55] ggrepel_0.8.1       crayon_1.3.4       
+[57] lattice_0.20-38     splines_3.6.1      
+[59] xlsxjars_0.6.1      SDMTools_1.1-221.1 
+[61] pillar_1.4.2        igraph_1.2.4.1     
+[63] future.apply_1.3.0  reshape2_1.4.3     
+[65] codetools_0.2-16    glue_1.3.1         
+[67] lsei_1.2-0          metap_1.1          
+[69] data.table_1.12.2   png_0.1-7          
+[71] Rdpack_0.11-0       gtable_0.3.0       
+[73] RANN_2.6.1          purrr_0.3.2        
+[75] tidyr_0.8.3         future_1.14.0      
+[77] assertthat_0.2.1    rsvd_1.0.2         
+[79] rsconnect_0.8.15    survival_2.44-1.1  
+[81] viridisLite_0.3.0   tibble_2.1.3       
+[83] rJava_0.9-11        cluster_2.1.0      
+[85] globals_0.12.4      fitdistrplus_1.0-14
+[87] ROCR_1.0-7         
