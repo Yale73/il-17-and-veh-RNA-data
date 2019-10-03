@@ -1,0 +1,74 @@
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(cowplot)
+library (xlsx)
+library(data.table)
+library(gplots)
+library(ggplot2)
+# LOADING DATA
+
+# Load the individual datasets 
+pbs.hashtag <- readRDS("I:/pbs.hashtag.Rds")
+
+
+##### VIEWING RAW DATA AND FILTERING
+
+##### Append percentage of mitochondrial genes to last column in matrix for each data set
+pbs.hashtag[["percent.mt"]] <- PercentageFeatureSet(pbs.hashtag, pattern = "^mt-")
+
+##### exclude outliers based on graphs and resave it to data
+pbs.hashtag <- subset(pbs.hashtag, subset = nFeature_RNA > 300 & nFeature_RNA < 4000 & percent.mt < 7.5)
+
+##### Exclude doublets and negatives based on hasing results
+pbs.hashtag <- subset(pbs.hashtag, subset = hash.ID != "Doublet")
+pbs.hashtag <- subset(pbs.hashtag, subset = hash.ID != "Negative")
+pbs.hashtag <- subset(pbs.hashtag, subset = hash.ID == "htag3")
+VlnPlot(pbs.hashtag, features = "nCount_RNA", pt.size = 0.1, log = TRUE)
+#### Only use Hash3
+
+
+DefaultAssay(pbs.hashtag) <- "ADT"
+
+
+##### Standard data workup: ##########
+##### NORMALIZE DATA - use centered-log ratio (CLR) normalization for CITE-Seq data
+pbs.hashtag <- NormalizeData(pbs.hashtag, assay = "ADT", normalization.method = "CLR")
+
+##### Scaling - Shift and scale expression
+pbs.hashtag <- ScaleData(pbs.hashtag, assay = "ADT")
+
+
+pbs.hashtag <- RunPCA(pbs.hashtag, features = rownames(pbs.hashtag), reduction.name = "pca_adt", reduction.key = "pca_adt_", 
+               verbose = TRUE)
+
+
+adt.data <- GetAssayData(pbs.hashtag, slot = "data")
+adt.dist <- dist(t(adt.data))
+
+pbs.hashtag[["tsne_adt"]] <- RunTSNE(adt.dist, assay = "ADT", reduction.key = "adtTSNE_")
+pbs.hashtag[["adt_snn"]] <- FindNeighbors(adt.dist)$snn
+pbs.hashtag <- FindClusters(pbs.hashtag, resolution = 0.5, graph.name = "adt_snn")
+
+
+
+
+##### look at clusters
+DimPlot(pbs.hashtag, reduction = "tsne_adt")
+
+RidgePlot(pbs.hashtag, features = c("adt_CD3", "adt_CD4", "adt_CD8a", "adt_CD69", "adt_CD62L","adt_CD44"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_CD25", "adt_CD127-(IL-7Ralpha)", "adt_TCR-gamma/sigma", "adt_CD19", "adt_IgM", "adt_CD335-(NKp46)"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_NK-1.1", "adt_CD90.2","adt_I-A/I-E","adt_CD45R/B220","adt_CD11b", "adt_CD172a-(SIRPalpha)"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_XCR1","adt_CD103", "adt_CD64-(FcgammaRI)", "adt_CD11c", "adt_CD24", "adt_CD326-(Ep-CAM)"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_CD195-(CCR5)","adt_CD196-(CCR6)", "adt_CXCR4", "adt_CD134-(OX-40)", "adt_CD278-(ICOS)", "adt_CD223-(LAG-3)"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_CD274-(B7-H1,-PD-L1)", "adt_KLRG1-(MAFA)","adt_CD27", "adt_CD21/CD35-(CR2/CR1)", "adt_CD86", "adt_IgD"),ncol = 2)
+RidgePlot(pbs.hashtag, features = c("adt_CD117-(c-kit)", "adt_CX3CR1", "adt_F4/80", "adt_CD192-(CCR2)"),ncol = 2)
+
+
+DefaultAssay(pbs.hashtag) <- "ADT"
+
+for (i in 0:7){
+  marker_i <- FindMarkers(pbs.hashtag, ident.1 = i, verbose =TRUE)
+  tab  <- paste0("Cluster", " ", i)
+  write.xlsx(marker_i, file = "I:/PBS-has3-ADT-data/PBS-Htag3-ClusterMarkers.xlsx", sheetName = tab, append = TRUE)
+}
